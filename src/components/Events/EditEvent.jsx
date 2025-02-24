@@ -1,23 +1,38 @@
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  Link,
+  redirect,
+  useNavigate,
+  useParams,
+  useSubmit,
+  useNavigation,
+} from "react-router-dom";
+import { /* useMutation, */ useQuery } from "@tanstack/react-query";
 
 import Modal from "../UI/Modal.jsx";
 import EventForm from "./EventForm.jsx";
 import { fetchEvent, updateEvent, queryClient } from "../util/http.js";
 
-import LoadingIndicator from "../UI/LoadingIndicator.jsx";
+/* import LoadingIndicator from "../UI/LoadingIndicator.jsx"; */
 import ErrorBlock from "../UI/ErrorBlock.jsx";
 
 export default function EditEvent() {
   const navigate = useNavigate();
+
+  // cambio por uso de react-router
+  const { state } = useNavigation();
+  const submit = useSubmit();
+  //
+
   const params = useParams();
 
-  const { data, isPending, isError, error } = useQuery({
+  const { data, /* isPending, */ isError, error } = useQuery({
     queryKey: ["events", params.id],
     queryFn: ({ signal }) => fetchEvent({ signal, id: params.id }),
+    staleTime: 10000,
   });
 
-  const { mutate } = useMutation({
+  // ahora todo esto seria innecesario con el uso de react router.
+  /* const { mutate } = useMutation({
     mutationFn: updateEvent,
     onMutate: async (data) => {
       const newEvent = data.event;
@@ -34,11 +49,13 @@ export default function EditEvent() {
     onSettled: () => {
       queryClient.invalidateQueries(["events", params.id]);
     },
-  });
+  }); */
 
   function handleSubmit(formData) {
-    mutate({ id: params.id, event: formData });
-    navigate("../");
+    /* mutate({ id: params.id, event: formData });
+    navigate("../"); */
+    submit(formData, { method: "PUT" });
+    // Solo con metodos diferentes a GET, el action del react-router-dom funciona.
   }
 
   function handleClose() {
@@ -47,13 +64,13 @@ export default function EditEvent() {
 
   let content;
 
-  if (isPending) {
+  /*   if (isPending) {
     content = (
       <div className="center">
         <LoadingIndicator />
       </div>
     );
-  }
+  } */
 
   if (isError) {
     content = (
@@ -77,15 +94,42 @@ export default function EditEvent() {
   if (data) {
     content = (
       <EventForm inputData={data} onSubmit={handleSubmit}>
-        <Link to="../" className="button-text">
-          Cancel
-        </Link>
-        <button type="submit" className="button">
-          Update
-        </button>
+        {state === "submitting" ? (
+          <p>Sending data...</p>
+        ) : (
+          <>
+            <Link to="../" className="button-text">
+              Cancel
+            </Link>
+            <button type="submit" className="button">
+              Update
+            </button>
+          </>
+        )}
       </EventForm>
     );
   }
 
   return <Modal onClose={handleClose}>{content}</Modal>;
+}
+
+// 1
+export function loader({ params }) {
+  return queryClient.fetchQuery({
+    queryKey: ["events", params.id],
+    queryFn: ({ signal }) => fetchEvent({ signal, id: params.id }),
+  });
+}
+
+// 2
+export async function action({ request, params }) {
+  const formData = await request.formData();
+  const updateEventData = Object.fromEntries(formData);
+  await updateEvent({ id: params.id, event: updateEventData });
+  // con lo siguiente ya no se hara una actualizacion optimista.
+  // Por tanto, habria que agregar la logica correspondiente por ejemplo en la funcion
+  // submit.
+  await queryClient.invalidateQueries();
+  // el redirect es de react-router-dom
+  return redirect("../");
 }
